@@ -1,0 +1,28 @@
+name: Validate TANEM test site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tanem-test-01-validate
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify test site
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f index.html
+          grep -q '<!doctype html>' index.html
+          grep -q 'Тестовая публикация № 01' index.html
+          grep -q '<meta name="robots" content="noindex, nofollow">' index.html
+          test "$(wc -c < index.html)" -le 100000
