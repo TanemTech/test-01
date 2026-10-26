@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """One-time bootstrap; no changes to existing sites, SSH settings, firewall or DNS."""
 import argparse
+import fcntl
+import fnmatch
 import hashlib
 import ipaddress
 import json
@@ -19,19 +21,44 @@ def execute(*args, **kwargs):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=30, **kwargs)
 
 
+def check_ssh_policy(text):
+    config = dict(line.split(' ', 1) for line in text.splitlines() if ' ' in line)
+    if config.get('pubkeyauthentication') != 'yes':
+        raise ValueError('SSH public-key login is disabled; no settings changed')
+    if config.get('forcecommand', 'none') != 'none' or config.get('chrootdirectory', 'none') != 'none':
+        raise ValueError('Existing SSH forced-command/chroot policy requires inspection')
+    if config.get('authenticationmethods', 'any') not in ('any', 'publickey'):
+        raise ValueError('SSH requires additional authentication; no settings changed')
+    paths = config.get('authorizedkeysfile', '').split()
+    if not any(p in ('.ssh/authorized_keys', '%h/.ssh/authorized_keys') for p in paths):
+        raise ValueError('Nonstandard SSH authorized_keys path; no settings changed')
+    allowed = config.get('allowusers', '').split()
+    if allowed and not any('@' not in p and fnmatch.fnmatchcase('tanem-publish', p) for p in allowed):
+        raise ValueError('SSH AllowUsers does not admit tanem-publish; no settings changed')
+    denied = config.get('denyusers', '').split()
+    if any(fnmatch.fnmatchcase('tanem-publish', p.split('@')[0]) for p in denied):
+        raise ValueError('SSH DenyUsers blocks tanem-publish; no settings changed')
+    if config.get('allowgroups') or config.get('denygroups'):
+        raise ValueError('Existing SSH group restrictions require inspection; no settings changed')
+
+
 def install(host, port, quiet=False):
     if os.geteuid() != 0:
         raise ValueError('Run once in the Selectel root web console')
     ipaddress.IPv4Address(host)
     if not 1 <= port <= 65535:
         raise ValueError('Invalid SSH port')
-    for command in ('nginx', 'sshd', 'sudo', 'visudo', 'ssh', 'ssh-keygen', 'useradd', 'openssl'):
+    for command in ('nginx', 'sshd', 'sudo', 'visudo', 'ssh', 'ssh-keygen', 'useradd', 'userdel', 'usermod', 'openssl'):
         if not shutil.which(command):
             raise ValueError('Required server command missing: ' + command)
     dump = execute('/usr/sbin/nginx', '-T').stdout
     if '/etc/nginx/conf.d/*.conf' not in dump:
         raise ValueError('Nginx must already include /etc/nginx/conf.d/*.conf; no config changed')
     execute('/usr/sbin/sshd', '-t')
+    policy = execute('/usr/sbin/sshd', '-T', '-C',
+                     f'user=tanem-publish,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport={port}').stdout
+    check_ssh_policy(policy)
+    r.public_key(Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text())
     marker = r.CONFIG / 'installed.json'
     receiver_bytes = Path(r.__file__).read_bytes()
     digest = hashlib.sha256(receiver_bytes).hexdigest()
@@ -53,39 +80,51 @@ def install(host, port, quiet=False):
                      Path('/etc/sudoers.d/tanem-publish')):
             if path.exists():
                 raise ValueError('Existing unmanaged path; nothing overwritten: ' + str(path))
-        # Every persistent path below belongs exclusively to this publisher.
-        r.CONFIG.mkdir(mode=0o700)
-        (r.CONFIG / 'sites').mkdir(mode=0o700)
-        r.ROOT.mkdir(mode=0o755)
-        Path(r.PROGRAM).parent.mkdir(mode=0o755, parents=True)
-        r.atomic(r.PROGRAM, receiver_bytes, 0o755)
-        execute('useradd', '--system', '--home-dir', str(r.AUTH.parent.parent),
-                '--no-create-home', '--shell', '/bin/sh', 'tanem-publish')
-        # An unknown random password keeps account-level SSH policies compatible;
-        # only the forced Ed25519 keys are used by the automation.
-        random_password = os.urandom(48).hex()
-        hashed = execute('openssl', 'passwd', '-6', '-stdin', input=random_password).stdout.strip()
-        execute('usermod', '--password', hashed, 'tanem-publish')
-        r.AUTH.parent.mkdir(mode=0o755, parents=True)
-        r.AUTH.parent.parent.chmod(0o755)
-        key_path = r.CONFIG / 'admin'
-        execute('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key_path))
-        r.rebuild_auth()
-        sudoers = f'tanem-publish ALL=(root) NOPASSWD: {r.PROGRAM} *\n'
-        with tempfile.NamedTemporaryFile(mode='w') as check:
-            check.write(sudoers)
-            check.flush()
-            execute('visudo', '-cf', check.name)
-        r.atomic('/etc/sudoers.d/tanem-publish', sudoers, 0o440)
-        key_fields = Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[:2]
-        alias = host if port == 22 else f'[{host}]:{port}'
-        bundle = {'host': host, 'port': port, 'user': 'tanem-publish',
-                  'known_hosts': alias + ' ' + ' '.join(key_fields) + '\n',
-                  'private_key': key_path.read_text()}
-        r.write_json(r.CONFIG / 'credentials.json', bundle)
-        # Record completed installation before local handshake: network-policy
-        # failure must be retryable without duplicating users/keys.
-        r.write_json(marker, {'receiver_sha256': digest, 'host': host, 'port': port})
+        user_created = False
+        try:
+            # Every persistent path below belongs exclusively to this publisher.
+            r.CONFIG.mkdir(mode=0o700)
+            (r.CONFIG / 'sites').mkdir(mode=0o700)
+            r.ROOT.mkdir(mode=0o755)
+            Path(r.PROGRAM).parent.mkdir(mode=0o755, parents=True)
+            r.atomic(r.PROGRAM, receiver_bytes, 0o755)
+            execute('useradd', '--system', '--home-dir', str(r.AUTH.parent.parent),
+                    '--no-create-home', '--shell', '/bin/sh', 'tanem-publish')
+            user_created = True
+            # An unknown random password keeps account-level SSH policies compatible;
+            # only the forced Ed25519 keys are used by the automation.
+            random_password = os.urandom(48).hex()
+            hashed = execute('openssl', 'passwd', '-6', '-stdin', input=random_password).stdout.strip()
+            execute('usermod', '--password', hashed, 'tanem-publish')
+            r.AUTH.parent.mkdir(mode=0o755, parents=True)
+            r.AUTH.parent.parent.chmod(0o755)
+            key_path = r.CONFIG / 'admin'
+            execute('ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key_path))
+            r.rebuild_auth()
+            sudoers = f'tanem-publish ALL=(root) NOPASSWD: {r.PROGRAM} *\n'
+            with tempfile.NamedTemporaryFile(mode='w') as check:
+                check.write(sudoers)
+                check.flush()
+                execute('visudo', '-cf', check.name)
+            r.atomic('/etc/sudoers.d/tanem-publish', sudoers, 0o440)
+            key_fields = Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[:2]
+            alias = host if port == 22 else f'[{host}]:{port}'
+            bundle = {'host': host, 'port': port, 'user': 'tanem-publish',
+                      'known_hosts': alias + ' ' + ' '.join(key_fields) + '\n',
+                      'private_key': key_path.read_text()}
+            r.write_json(r.CONFIG / 'credentials.json', bundle)
+            # Record completed installation before local handshake: network-policy
+            # failure must be retryable without duplicating users/keys.
+            r.write_json(marker, {'receiver_sha256': digest, 'host': host, 'port': port})
+        except BaseException:
+            # Roll back only paths/user created by this fresh, locked installation.
+            Path('/etc/sudoers.d/tanem-publish').unlink(missing_ok=True)
+            if user_created:
+                execute('userdel', 'tanem-publish')
+            for path in (r.CONFIG, r.ROOT, Path(r.PROGRAM).parent, r.AUTH.parent.parent):
+                if path.exists():
+                    shutil.rmtree(path)
+            raise
     # Read-only local SSH smoke test; never restarts/reconfigures sshd.
     with tempfile.TemporaryDirectory() as temp:
         known = Path(temp) / 'known_hosts'
@@ -112,7 +151,9 @@ if __name__ == '__main__':
     parser.add_argument('--quiet', action='store_true')
     args = parser.parse_args()
     try:
-        install(args.host, args.port, args.quiet)
+        with open('/run/lock/tanem-publish-bootstrap.lock', 'a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            install(args.host, args.port, args.quiet)
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
         print('SETUP_ERROR: ' + str(exc), file=sys.stderr)
         if isinstance(exc, subprocess.CalledProcessError):

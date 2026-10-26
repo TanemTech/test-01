@@ -39,11 +39,14 @@ def main():
         result = client.ssh_request(bundle, {**site, 'action': 'register',
                                             'public_key': key.with_suffix('.pub').read_text()})
         assert result['status'] == 'REGISTERED'
+        assert client.ssh_request(bundle, {**site, 'action': 'status'})['status'] == 'PENDING'
         child = {**bundle, 'private_key': key.read_text(), 'hostname': site['hostname']}
         artifact = folder / 'site.tar.gz'
         package(artifact, 'first')
         header = {'action': 'deploy', 'repository': site['repository'], 'sha': 'a' * 40, 'run_id': 100}
         assert client.ssh_request(child, header, artifact)['status'] == 'DEPLOYED'
+        assert client.ssh_request(bundle, {**site, 'action': 'confirm',
+                'public_key': key.with_suffix('.pub').read_text()})['status'] == 'CONNECTED'
         package(artifact, 'second')
         assert client.ssh_request(child, {**header, 'sha': 'b' * 40, 'run_id': 101}, artifact)['status'] == 'DEPLOYED'
         current = Path('/srv/tanem-sites/test-01/current')
@@ -51,6 +54,17 @@ def main():
         state = json.loads(Path('/srv/tanem-sites/test-01/state.json').read_text())
         assert 'first' in (Path(state['previous']) / 'index.html').read_text()
         assert client.ssh_request(child, header)['status'] == 'STALE'
+        with tarfile.open(artifact, 'w:gz') as tar:
+            info = tarfile.TarInfo('../escape.html')
+            tar.addfile(info)
+        try:
+            client.ssh_request(child, {**header, 'sha': 'c' * 40, 'run_id': 102}, artifact)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError('Unsafe archive was accepted')
+        assert 'second' in (current / 'index.html').read_text()
+        package(artifact, 'second')
         try:
             client.ssh_request(child, {**site, 'action': 'register', 'public_key': key.with_suffix('.pub').read_text()})
         except RuntimeError:

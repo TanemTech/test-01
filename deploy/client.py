@@ -23,7 +23,7 @@ from receiver import public_key, safe_name, validate_site
 API = 'https://api.github.com'
 
 
-def api(path, method='GET', body=None):
+def api(path, method='GET', body=None, allow_missing=False):
     req = urllib.request.Request(API + path, method=method,
         data=None if body is None else json.dumps(body).encode(),
         headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
@@ -34,6 +34,8 @@ def api(path, method='GET', body=None):
             data = response.read()
             return json.loads(data) if data else None
     except urllib.error.HTTPError as exc:
+        if allow_missing and exc.code == 404:
+            return None
         # Response bodies may contain submitted data; never dump secrets to logs.
         raise RuntimeError(f'GitHub API {method} {path}: HTTP {exc.code}') from None
 
@@ -204,6 +206,11 @@ def onboard(bundle, root):
         api(f'/repos/{repo}/actions/secrets/public-key')
         api(f'/repos/{repo}/contents/.github/workflows/selectel-site.yml?ref=main')
         api(f'/repos/{repo}/actions/workflows/{site["workflow_file"]}')
+        status = ssh_request(bundle, {**site, 'action': 'status'})
+        saved_secret = api(f'/repos/{repo}/actions/secrets/TANEM_SITE_SSH', allow_missing=True)
+        if status['status'] == 'CONNECTED' and saved_secret is not None:
+            print('ALREADY_CONNECTED: ' + repo)
+            continue
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / 'site_key'
             subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(path)], check=True)
@@ -220,6 +227,7 @@ def onboard(bundle, root):
         # a GitHub App and recursive push workflows were suppressed.
         api(f'/repos/{repo}/actions/workflows/{site["workflow_file"]}/dispatches',
             'POST', {'ref': 'main'})
+        ssh_request(bundle, {**site, 'action': 'confirm', 'public_key': pub})
         print('CONNECTED: ' + repo + '; validation and publication requested')
 
 

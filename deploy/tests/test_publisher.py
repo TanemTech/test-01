@@ -13,6 +13,8 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import receiver as r
 import client as c
+import bootstrap as b
+import render_workflow as w
 
 
 def archive(files=None):
@@ -186,6 +188,28 @@ class PublisherTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_workflow_generation_pins_trusted_code(self):
+        site = {'slug': 'example', 'repository': 'TanemTech/example', 'hostname': 'example.tanem.ru',
+                'workflow_name': 'Validate salon', 'workflow_file': 'pages.yml', 'artifact': 'github-pages'}
+        text = w.render(site, 'a' * 40)
+        self.assertIn('ref: ' + 'a' * 40, text)
+        self.assertIn('workflows: ["Validate salon"]', text)
+        self.assertIn('--workflow pages.yml --artifact github-pages', text)
+        self.assertNotIn('workflow_dispatch:', text)
+        with self.assertRaises(ValueError):
+            w.render(site, 'main')
+
+    def test_onboarding_skips_connected_sites_without_rotating_keys(self):
+        site = {'slug': 'test-01', 'repository': 'TanemTech/test-01', 'hostname': 'test-01.tanem.ru',
+                'workflow_file': 'validate.yml', 'artifact': 'tanem-site'}
+        with patch.object(c, 'validate_registry', return_value=[site]), \
+             patch.object(c, 'ssh_request', side_effect=[{'scope': 'admin'}, {'status': 'CONNECTED'}]) as ssh, \
+             patch.object(c, 'api', side_effect=[{'default_branch': 'main'}, {}, {}, {}, {'name': 'TANEM_SITE_SSH'}]), \
+             patch.object(c.subprocess, 'run') as process:
+            c.onboard({}, 'ignored')
+            self.assertEqual(ssh.call_count, 2)
+            process.assert_not_called()
+
     def test_pages_artifact_normalization(self):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
@@ -226,6 +250,21 @@ class ClientTests(unittest.TestCase):
             with patch.object(c, 'api', side_effect=[{**run, **changed}, {'commit': {'sha': 'a' * 40}}]):
                 with self.assertRaises(ValueError):
                     c.check_run('TanemTech/test-01', 10, 'validate.yml')
+
+
+class BootstrapPolicyTests(unittest.TestCase):
+    policy = 'pubkeyauthentication yes\nauthorizedkeysfile .ssh/authorized_keys\n'
+
+    def test_standard_policy_accepted(self):
+        b.check_ssh_policy(self.policy)
+
+    def test_incompatible_policies_stop_before_installation(self):
+        for extra in ('allowusers root tanem-deploy\n', 'denyusers tanem-*\n',
+                      'allowgroups existing-group\n', 'forcecommand internal-sftp\n',
+                      'authenticationmethods publickey,password\n',
+                      'pubkeyauthentication no\n', 'authorizedkeysfile /custom/keys\n'):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                b.check_ssh_policy(self.policy + extra)
 
 
 if __name__ == '__main__':

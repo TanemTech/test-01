@@ -47,7 +47,8 @@
 1. Проверить инструкцию AGENTS/DEPLOYMENT клиентского репозитория, его production-
    проверки и статический артефакт. Уточнить у владельца slug, если он не задан.
    Не назначать новый адрес клиенту самовольно.
-2. Добавить `.github/workflows/selectel-site.yml` из шаблона в `deploy/templates/`.
+2. Сгенерировать `.github/workflows/selectel-site.yml` через `deploy/render_workflow.py`.
+   Команда для специалиста: `python3 deploy/render_workflow.py deploy/sites/<slug>.json --revision <проверенный-SHA>`.
    Указать точное имя workflow проверки, имя файла workflow, артефакт и проверенный
    commit SHA кода приёмника/клиента в управляющем репозитории.
 3. Добавить запись `deploy/sites/<slug>.json` в управляющий репозиторий. Только

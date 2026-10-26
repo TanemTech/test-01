@@ -133,9 +133,28 @@ def register(value):
     # Keep existing keys until the new secret has been saved and successfully used.
     if key not in keys:
         keys.append(key)
-    write_json(path, {**site, 'keys': keys})
+    write_json(path, {**site, 'keys': keys, 'connected': False})
     rebuild_auth()
     return {'status': 'REGISTERED', **site}
+
+
+def enrollment(request):
+    site = validate_site(request)
+    path = CONFIG / 'sites' / (site['slug'] + '.json')
+    if not path.exists():
+        return {'status': 'NOT_REGISTERED'}
+    old = read_json(path)
+    if validate_site(old) != site:
+        raise ValueError('Existing site binding cannot be reassigned')
+    if request['action'] == 'confirm':
+        key = public_key(request['public_key'])
+        if key not in old['keys']:
+            raise ValueError('Confirmation requires a previously enrolled key')
+        # Called only after saving the repository secret and triggering CI.
+        write_json(path, {**site, 'keys': [key], 'connected': True})
+        rebuild_auth()
+        return {'status': 'CONNECTED'}
+    return {'status': 'CONNECTED' if old.get('connected') else 'PENDING', **site}
 
 
 def safe_name(name):
@@ -327,6 +346,8 @@ def handle(scope, request, stream):
     if request.get('action') == 'ping':
         return {'status': 'READY', 'scope': scope, 'version': 1}
     if scope == 'admin':
+        if request.get('action') in ('status', 'confirm'):
+            return enrollment(request)
         if request.get('action') != 'register':
             raise ValueError('Admin key only registers site bindings and scoped keys')
         return register(request)
