@@ -1,0 +1,68 @@
+name: Publisher tests
+
+on:
+  push:
+    branches: [main, 'prepare/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: |
+          python3 -m compileall -q deploy
+          python3 -m unittest discover -s deploy/tests -v
+          python3 deploy/client.py registry
+          python3 deploy/build_installer.py
+          git diff --exit-code -- deploy/install.sh
+          bash -n deploy/install.sh
+          shellcheck deploy/install.sh
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Prepare disposable SSH and Nginx server
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx openssh-server
+          sudo systemctl start nginx
+          sudo ssh-keygen -A
+          sudo mkdir -p /run/sshd
+          cat > /tmp/tanem-test-sshd.conf <<'CONFIG'
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          AuthorizedKeysFile .ssh/authorized_keys
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          UsePAM yes
+          PermitRootLogin no
+          PidFile /tmp/tanem-test-sshd.pid
+          CONFIG
+          sudo /usr/sbin/sshd -f /tmp/tanem-test-sshd.conf -E /tmp/tanem-test-sshd.log
+      - name: Test real SSH publication and Nginx HTTP
+        run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/integration.py
+      - name: Diagnose SSH integration failures without secrets
+        if: failure()
+        run: sudo tail -50 /tmp/tanem-test-sshd.log || true
+  selectel-connectivity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Read-only SSH handshake from GitHub to Selectel
+        run: |
+          ssh-keyscan -T 15 -t ed25519 135.106.229.21 > /tmp/selectel-known-hosts
+          test -s /tmp/selectel-known-hosts
+          ssh-keygen -lf /tmp/selectel-known-hosts
+          echo 'NETWORK_OK: GitHub runner reached SSH; no login or server changes attempted.'
