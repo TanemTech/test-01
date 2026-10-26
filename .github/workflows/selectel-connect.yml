@@ -1,0 +1,34 @@
+name: Connect sites to Selectel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['deploy/sites/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tanem-site-enrollment
+  cancel-in-progress: false
+
+jobs:
+  connect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TANEM_SERVER: ${{ secrets.TANEM_SERVER }}
+      GH_TOKEN: ${{ secrets.TANEM_GITHUB_TOKEN }}
+    steps:
+      - name: Check one-time setup
+        run: |
+          test -n "$TANEM_SERVER" || { echo 'Add TANEM_SERVER in repository Actions secrets'; exit 1; }
+          test -n "$GH_TOKEN" || { echo 'Add TANEM_GITHUB_TOKEN in repository Actions secrets'; exit 1; }
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate publisher and connect registered sites
+        run: |
+          python3 -m unittest discover -s deploy/tests -v
+          python3 deploy/client.py onboard

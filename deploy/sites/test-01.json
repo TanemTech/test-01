@@ -1,0 +1,7 @@
+{
+  "slug": "test-01",
+  "repository": "TanemTech/test-01",
+  "hostname": "test-01.tanem.ru",
+  "workflow_file": "validate.yml",
+  "artifact": "tanem-site"
+}

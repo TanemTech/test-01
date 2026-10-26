@@ -3,6 +3,7 @@ name: Validate TANEM test site
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -26,3 +27,10 @@ jobs:
           grep -q 'Тестовая публикация № 01' index.html
           grep -q '<meta name="robots" content="noindex, nofollow">' index.html
           test "$(wc -c < index.html)" -le 100000
+      - name: Publish only the checked static page as an artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tanem-site
+          path: index.html
+          if-no-files-found: error
+          retention-days: 7
