@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import ssl
 import subprocess
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -46,17 +47,25 @@ def main():
     (redirects / 'test-01.conf').write_text('return 308 https://test-01.tanem.ru$request_uri;\n')
     subprocess.run(['/usr/sbin/nginx', '-t'], check=True)
     subprocess.run(['/usr/sbin/nginx', '-s', 'reload'], check=True)
-    try:
-        opener = urllib.request.build_opener(type('NoRedirect', (urllib.request.HTTPRedirectHandler,), {
-            'redirect_request': lambda self, req, fp, code, msg, headers, url: None,
-        })())
-        opener.open(urllib.request.Request('http://127.0.0.1/',
-                    headers={'Host': 'test-01.tanem.ru'}))
-    except urllib.error.HTTPError as response:
-        assert response.code == 308
-        assert response.headers['Location'] == 'https://test-01.tanem.ru/'
-    else:
-        raise AssertionError('HTTP did not redirect to HTTPS')
+    opener = urllib.request.build_opener(type('NoRedirect', (urllib.request.HTTPRedirectHandler,), {
+        'redirect_request': lambda self, req, fp, code, msg, headers, url: None,
+    })())
+    # nginx reload signals workers asynchronously; allow a short handover.
+    redirected = False
+    for _ in range(20):
+        try:
+            response = opener.open(urllib.request.Request('http://127.0.0.1/',
+                                   headers={'Host': 'test-01.tanem.ru'}))
+            status = response.status
+            response.close()
+        except urllib.error.HTTPError as response:
+            status = response.code
+            if status == 308:
+                assert response.headers['Location'] == 'https://test-01.tanem.ru/'
+                redirected = True
+                break
+        time.sleep(0.15)
+    assert redirected, f'HTTP did not redirect to HTTPS; last status={status}'
     context = ssl._create_unverified_context()  # Self-signed only inside disposable CI.
     req = urllib.request.Request('https://127.0.0.1/', headers={'Host': 'test-01.tanem.ru'})
     # SNI uses IP, but this disposable runner has only one 443 test server.
