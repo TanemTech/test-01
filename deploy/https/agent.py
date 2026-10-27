@@ -124,7 +124,9 @@ def activate(site):
             publisher.atomic(ssl, expected_tls, 0o644)
         if not redirect.exists():
             publisher.atomic(redirect, expected_redirect, 0o644)
-        execute('/usr/sbin/nginx', '-t')
+        tested = subprocess.run(['/usr/sbin/nginx', '-t'], capture_output=True, text=True, timeout=30)
+        if tested.returncode or 'conflicting server name' in tested.stderr.lower():
+            raise RuntimeError('Nginx rejected HTTPS configuration: ' + tested.stderr[-400:])
         execute('/usr/sbin/nginx', '-s', 'reload')
     except BaseException:
         if old_ssl is None:
