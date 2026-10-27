@@ -224,10 +224,29 @@ class ClientTests(unittest.TestCase):
                 'workflow_file': 'validate.yml', 'artifact': 'tanem-site'}
         with patch.object(c, 'validate_registry', return_value=[site]), \
              patch.object(c, 'ssh_request', side_effect=[{'scope': 'admin'}, {'status': 'CONNECTED'}]) as ssh, \
-             patch.object(c, 'api', side_effect=[{'default_branch': 'main'}, {}, {}, {}, {'name': 'TANEM_SITE_SSH'}]), \
+             patch.object(c, 'api', side_effect=[
+                 {'default_branch': 'main'}, {}, {}, {},
+                 {'protection_rules': [{'type': 'required_reviewers',
+                                        'reviewers': [{'reviewer': {'login': 'TanemTech'}}]}]},
+                 {'name': 'TANEM_SITE_SSH'}, None
+             ]), \
              patch.object(c.subprocess, 'run') as process:
             c.onboard({}, 'ignored')
             self.assertEqual(ssh.call_count, 2)
+            process.assert_not_called()
+
+    def test_onboarding_rejects_missing_owner_review_before_key_enrollment(self):
+        site = {'slug': 'test-01', 'repository': 'TanemTech/test-01', 'hostname': 'test-01.tanem.ru',
+                'workflow_file': 'validate.yml', 'artifact': 'tanem-site'}
+        with patch.object(c, 'validate_registry', return_value=[site]), \
+             patch.object(c, 'ssh_request', return_value={'scope': 'admin'}) as ssh, \
+             patch.object(c, 'api', side_effect=[
+                 {'default_branch': 'main'}, {}, {}, {}, {'protection_rules': []}
+             ]), \
+             patch.object(c.subprocess, 'run') as process:
+            with self.assertRaisesRegex(ValueError, 'required reviewer'):
+                c.onboard({}, 'ignored')
+            self.assertEqual(ssh.call_count, 1)
             process.assert_not_called()
 
     def test_pages_artifact_normalization(self):
