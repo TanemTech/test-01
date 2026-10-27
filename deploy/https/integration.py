@@ -27,7 +27,7 @@ def main():
     (root / '.well-known/acme-challenge').mkdir(parents=True, exist_ok=True)
     (root / '.well-known/acme-challenge/probe').write_text('challenge-is-served')
     redirects = Path('/etc/tanem-https/redirects')
-    redirects.mkdir(parents=True)
+    redirects.mkdir(parents=True, exist_ok=True)
     http = Path('/etc/nginx/conf.d/tanem-auto-test-01.conf')
     assert http.exists(), 'publisher CI integration must run first'
     http.write_text(receiver.nginx_config(site))
