@@ -23,6 +23,26 @@ from receiver import public_key, safe_name, validate_site
 API = 'https://api.github.com'
 
 
+def load_credentials(name):
+    raw = os.environ.get(name, '')
+    try:
+        bundle = json.loads(raw)
+    except json.JSONDecodeError:
+        # The installer encodes real key/known_hosts line endings as literal
+        # JSON \\n escapes. A web-console copy can additionally insert physical
+        # CR/LF every terminal column; remove only those wrapping characters.
+        try:
+            bundle = json.loads(raw.replace('\r', '').replace('\n', ''))
+        except json.JSONDecodeError:
+            raise ValueError(name + ': invalid JSON; copy the complete credential object') from None
+    fields = ('host', 'user', 'private_key', 'known_hosts')
+    if not isinstance(bundle, dict) or any(not isinstance(bundle.get(f), str) or not bundle[f] for f in fields):
+        raise ValueError(name + ': credential fields are missing or invalid')
+    if type(bundle.get('port')) is not int or not 1 <= bundle['port'] <= 65535:
+        raise ValueError(name + ': invalid SSH port')
+    return bundle
+
+
 def api(path, method='GET', body=None, allow_missing=False):
     req = urllib.request.Request(API + path, method=method,
         data=None if body is None else json.dumps(body).encode(),
@@ -244,9 +264,9 @@ if __name__ == '__main__':
         if args.action == 'registry':
             print(json.dumps(validate_registry(args.registry)))
         elif args.action == 'onboard':
-            onboard(json.loads(os.environ['TANEM_SERVER']), args.registry)
+            onboard(load_credentials('TANEM_SERVER'), args.registry)
         else:
-            publish(json.loads(os.environ['TANEM_SITE_SSH']), args.repo,
+            publish(load_credentials('TANEM_SITE_SSH'), args.repo,
                     args.run_id, args.workflow, args.artifact)
     except Exception as exc:
         print('ERROR: ' + str(exc), file=sys.stderr)

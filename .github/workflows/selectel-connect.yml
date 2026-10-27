@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['deploy/sites/**']
+    paths: ['deploy/sites/**', 'deploy/client.py']
 
 permissions:
   contents: read

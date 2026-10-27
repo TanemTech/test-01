@@ -188,6 +188,26 @@ class PublisherTests(unittest.TestCase):
 
 
 class ClientTests(unittest.TestCase):
+    def test_console_wrapping_preserves_encoded_key_line_endings(self):
+        bundle = {'host': '135.106.229.21', 'port': 22, 'user': 'tanem-publish',
+                  'known_hosts': '135.106.229.21 ssh-ed25519 ' + 'A' * 60 + '\n',
+                  'private_key': '-----BEGIN OPENSSH PRIVATE KEY-----\n' + 'B' * 90 + '\n-----END OPENSSH PRIVATE KEY-----\n'}
+        raw = json.dumps(bundle, sort_keys=True)
+        # Also covers wrapping between the backslash and n in an escape.
+        for width in (1, 26, 80, 120):
+            wrapped = '\r\n'.join(raw[i:i+width] for i in range(0, len(raw), width))
+            with patch.dict(os.environ, {'TANEM_SERVER': wrapped}):
+                self.assertEqual(c.load_credentials('TANEM_SERVER'), bundle)
+        with patch.dict(os.environ, {'TANEM_SERVER': json.dumps(bundle, indent=2)}):
+            self.assertEqual(c.load_credentials('TANEM_SERVER'), bundle)
+
+    def test_credential_errors_do_not_disclose_values_or_guess_missing_data(self):
+        for value in ('{"private_key":"DO_NOT_DISCLOSE"', '{}', '[]', '{"port":22}'):
+            with patch.dict(os.environ, {'TANEM_SERVER': value}):
+                with self.assertRaises(ValueError) as error:
+                    c.load_credentials('TANEM_SERVER')
+                self.assertNotIn('DO_NOT_DISCLOSE', str(error.exception))
+
     def test_workflow_generation_pins_trusted_code(self):
         site = {'slug': 'example', 'repository': 'TanemTech/example', 'hostname': 'example.tanem.ru',
                 'workflow_name': 'Validate salon', 'workflow_file': 'pages.yml', 'artifact': 'github-pages'}
