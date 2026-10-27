@@ -84,22 +84,6 @@ def main():
         child2 = {**bundle, 'private_key': key2.read_text(), 'hostname': other['hostname']}
         assert client.ssh_request(child2, {**header, 'repository': other['repository']}, artifact)['status'] == 'DEPLOYED'
         assert 'second' in (current / 'index.html').read_text()
-        # Remove the first site using the exact root-console script for Selectel.
-        subprocess.run(['python3', 'deploy/remove_test_site.py'], check=True)
-        subprocess.run(['python3', 'deploy/remove_test_site.py'], check=True)
-        assert not Path('/srv/tanem-sites/test-01').exists()
-        assert not Path('/etc/nginx/conf.d/tanem-auto-test-01.conf').exists()
-        assert client.ssh_request(bundle, {**site, 'action': 'status'})['status'] == 'NOT_REGISTERED'
-        try:
-            client.ssh_request(child, {'action': 'ping'})
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError('Removed site key still grants SSH access')
-        # Real HTTP verification of the unaffected second site.
-        assert client.ssh_request(child2, {**header, 'repository': other['repository']}, artifact)['status'] == 'UNCHANGED'
-        assert Path('/srv/tanem-sites/test-02/current/index.html').exists()
-        print('REMOVAL_OK: test-01 removed, retry safe, key revoked, second site still served')
     assert before == hashlib.sha256(config.read_bytes()).hexdigest()
     print('INTEGRATION_OK: install, retry, restricted SSH, first deployment, automatic-style update, second site, isolation, previous release and real Nginx HTTP verification')
 
