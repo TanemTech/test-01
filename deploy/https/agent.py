@@ -95,8 +95,7 @@ def issue_certificate(hostname, account):
     attempt.write_text(json.dumps({'time': now}))
     cmd = ['/usr/bin/certbot', 'certonly', '--webroot', '-w', str(WEBROOT),
            '--cert-name', hostname, '-d', hostname, '--account', account,
-           '--non-interactive', '--agree-tos', '--no-eff-email',
-           '--deploy-hook', '/usr/local/lib/tanem-https/reload.sh']
+           '--non-interactive', '--agree-tos', '--no-eff-email']
     try:
         execute(*cmd)
         return True
