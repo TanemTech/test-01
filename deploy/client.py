@@ -243,12 +243,10 @@ def onboard(bundle, root):
                 raise ValueError('Scoped SSH key self-test failed')
             subprocess.run(['gh', 'secret', 'set', 'TANEM_SITE_SSH', '--repo', repo],
                            input=json.dumps(child), text=True, capture_output=True, check=True)
-        # Explicit dispatch also works if the triggering code change was made by
-        # a GitHub App and recursive push workflows were suppressed.
-        api(f'/repos/{repo}/actions/workflows/{site["workflow_file"]}/dispatches',
-            'POST', {'ref': 'main'})
+        # Enrollment NEVER publishes or requests publication.
+        # The owner must separately trigger the site's manual workflow.
         ssh_request(bundle, {**site, 'action': 'confirm', 'public_key': pub})
-        print('CONNECTED: ' + repo + '; validation and publication requested')
+        print('CONNECTED_NOT_PUBLISHED: ' + repo + '; ready for owner-approved manual publication')
 
 
 if __name__ == '__main__':

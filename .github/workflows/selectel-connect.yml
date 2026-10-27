@@ -1,10 +1,8 @@
 name: Connect sites to Selectel
 
+# Explicit activation only; registering a repo must never happen after a routine push.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['deploy/sites/**', 'deploy/client.py']
 
 permissions:
   contents: read

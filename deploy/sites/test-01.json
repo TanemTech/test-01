@@ -3,6 +3,6 @@
   "repository": "TanemTech/test-01",
   "hostname": "test-01.tanem.ru",
   "workflow_file": "validate.yml",
-  "workflow_name": "Validate TANEM test site",
+  "workflow_name": "Publish TANEM site (manual request)",
   "artifact": "tanem-site"
 }

@@ -1,9 +1,7 @@
-name: Validate TANEM test site
+name: Publish TANEM site (manual request)
 
+# Code changes are drafts; no validation/deployment is launched by a push.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:

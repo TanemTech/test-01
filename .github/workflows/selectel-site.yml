@@ -2,7 +2,7 @@ name: Publish tested site to Selectel
 
 on:
   workflow_run:
-    workflows: ['Validate TANEM test site']
+    workflows: ['Publish TANEM site (manual request)']
     types: [completed]
     branches: [main]
 
@@ -19,15 +19,23 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
+      github.event.workflow_run.event == 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    # Owner approval is configured under Settings > Environments > tanem-production.
+    environment: tanem-production
     timeout-minutes: 20
     env:
+      TANEM_RELEASE_PERMISSION: ${{ vars.TANEM_RELEASE_PERMISSION }}
       TANEM_SITE_SSH: ${{ secrets.TANEM_SITE_SSH }}
       GH_TOKEN: ${{ github.token }}
       SOURCE_REPO: ${{ github.repository }}
       SOURCE_RUN: ${{ github.event.workflow_run.id }}
     steps:
+      - name: Require owner-enabled publication environment
+        run: |
+          test "$TANEM_RELEASE_PERMISSION" = 'enabled' || {
+            echo 'DEPLOYMENT_BLOCKED: owner must configure protected tanem-production environment'; exit 1;
+          }
       - name: Check connection
         id: connected
         run: |
