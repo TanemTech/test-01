@@ -226,9 +226,32 @@ def onboard(bundle, root):
         api(f'/repos/{repo}/actions/secrets/public-key')
         api(f'/repos/{repo}/contents/.github/workflows/selectel-site.yml?ref=main')
         api(f'/repos/{repo}/actions/workflows/{site["workflow_file"]}')
+        # A site-level key is stored ONLY in the owner-approved deployment environment.
+        # A repository-level secret would allow a contributor to bypass reviewers
+        # by creating another Actions workflow.
+        env_name = 'tanem-production'
+        env = api(f'/repos/{repo}/environments/{env_name}', allow_missing=True)
+        if env is None:
+            raise ValueError('Owner must first create tanem-production environment: ' + repo)
+        reviewers = [
+            item.get('reviewer', {})
+            for rule in env.get('protection_rules', [])
+            if rule.get('type') == 'required_reviewers'
+            for item in rule.get('reviewers', [])
+        ]
+        if not any(person.get('login') == 'TanemTech' for person in reviewers):
+            raise ValueError('Owner TanemTech must be an environment required reviewer: ' + repo)
         status = ssh_request(bundle, {**site, 'action': 'status'})
-        saved_secret = api(f'/repos/{repo}/actions/secrets/TANEM_SITE_SSH', allow_missing=True)
+        saved_secret = api(
+            f'/repos/{repo}/environments/{env_name}/secrets/TANEM_SITE_SSH',
+            allow_missing=True
+        )
         if status['status'] == 'CONNECTED' and saved_secret is not None:
+            # A leftover repository-wide secret must not give unreviewed jobs SSH.
+            old_secret = api(f'/repos/{repo}/actions/secrets/TANEM_SITE_SSH', allow_missing=True)
+            if old_secret is not None:
+                subprocess.run(['gh', 'secret', 'delete', 'TANEM_SITE_SSH', '--repo', repo],
+                               text=True, capture_output=True, check=True)
             print('ALREADY_CONNECTED: ' + repo)
             continue
         with tempfile.TemporaryDirectory() as temp:
@@ -241,11 +264,17 @@ def onboard(bundle, root):
             child = {**bundle, 'private_key': path.read_text(), 'hostname': site['hostname']}
             if ssh_request(child, {'action': 'ping'}).get('scope') != site['slug']:
                 raise ValueError('Scoped SSH key self-test failed')
-            subprocess.run(['gh', 'secret', 'set', 'TANEM_SITE_SSH', '--repo', repo],
+            subprocess.run(['gh', 'secret', 'set', 'TANEM_SITE_SSH', '--env', env_name,
+                            '--repo', repo],
                            input=json.dumps(child), text=True, capture_output=True, check=True)
-        # Enrollment NEVER publishes or requests publication.
-        # The owner must separately trigger the site's manual workflow.
+        # Confirm revokes the previous key only AFTER the new environment secret
+        # has been saved and its corresponding SSH key successfully tested.
         ssh_request(bundle, {**site, 'action': 'confirm', 'public_key': pub})
+        old_secret = api(f'/repos/{repo}/actions/secrets/TANEM_SITE_SSH', allow_missing=True)
+        if old_secret is not None:
+            subprocess.run(['gh', 'secret', 'delete', 'TANEM_SITE_SSH', '--repo', repo],
+                           text=True, capture_output=True, check=True)
+        # Enrollment NEVER publishes or requests publication.
         print('CONNECTED_NOT_PUBLISHED: ' + repo + '; ready for owner-approved manual publication')
 
 
