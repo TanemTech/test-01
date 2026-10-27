@@ -24,7 +24,7 @@ def main():
     receiver = load('deploy/https/receiver.py', 'https_receiver')
     agent = load('deploy/https/agent.py', 'https_agent')
     root = Path('/var/lib/tanem-https')
-    (root / '.well-known/acme-challenge').mkdir(parents=True)
+    (root / '.well-known/acme-challenge').mkdir(parents=True, exist_ok=True)
     (root / '.well-known/acme-challenge/probe').write_text('challenge-is-served')
     redirects = Path('/etc/tanem-https/redirects')
     redirects.mkdir(parents=True)
