@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """One-time guarded HTTPS activation; modifies only TANEM-owned HTTP vhosts."""
 import hashlib
+import fcntl
 import importlib.util
 import json
 import os
@@ -161,7 +162,9 @@ def install(new_receiver, agent_file):
 
 if __name__ == '__main__':
     try:
-        install(Path(sys.argv[1]), Path(sys.argv[2]))
+        with Path('/etc/tanem-publish/publish.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            install(Path(sys.argv[1]), Path(sys.argv[2]))
     except Exception as exc:
         print('HTTPS_SETUP_ABORTED:', str(exc), file=sys.stderr)
         sys.exit(1)
