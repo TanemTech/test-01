@@ -40,11 +40,13 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         if: steps.connected.outputs.ready == 'true'
         with:
-          # Trusted default-branch publisher, never checkout untrusted artifact code.
-          ref: ${{ github.sha }}
+          repository: TanemTech/test-01
+          # Pin publisher implementation to a tested revision, not current site code.
+          ref: ea12967170ec8c02a3f4312cd12b843ed7876245
+          path: publisher
           persist-credentials: false
       - name: Publish approved artifact and check external HTTP
         if: steps.connected.outputs.ready == 'true'
         run: >-
-          python3 deploy/client.py publish --repo "$SOURCE_REPO" --run-id "$SOURCE_RUN"
+          python3 publisher/deploy/client.py publish --repo "$SOURCE_REPO" --run-id "$SOURCE_RUN"
           --workflow validate.yml --artifact tanem-site

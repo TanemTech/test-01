@@ -3,7 +3,17 @@ name: Publisher tests
 on:
   push:
     branches: [main, 'prepare/**']
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/publisher-tests.yml'
+      - '.github/workflows/selectel-site.yml'
+      - '.github/workflows/selectel-connect.yml'
   pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/publisher-tests.yml'
+      - '.github/workflows/selectel-site.yml'
+      - '.github/workflows/selectel-connect.yml'
   workflow_dispatch:
 
 permissions:
