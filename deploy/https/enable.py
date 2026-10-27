@@ -23,23 +23,15 @@ set -eu
 /usr/sbin/nginx -t
 /usr/sbin/nginx -s reload
 '''
-SERVICE = '''[Unit]
-Description=TANEM HTTPS provisioning for registered sites
-After=network-online.target nginx.service
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/python3 /usr/local/lib/tanem-https/agent.py
+# Reuse the system's existing certbot.timer instead of adding another service/timer.
+DROPIN_DIR = SYSTEMD / 'certbot.service.d'
+DROPIN_PATH = DROPIN_DIR / '10-tanem-https.conf'
+DEPLOY_HOOK = Path('/etc/letsencrypt/renewal-hooks/deploy/tanem-https-reload.sh')
+DROPIN = '''[Service]
+# Never change the success/failure status of the existing certificate renewals.
+ExecStartPost=-/usr/bin/python3 /usr/local/lib/tanem-https/agent.py
 '''
-TIMER = '''[Unit]
-Description=Check TANEM registered sites for missing HTTPS
-[Timer]
-OnBootSec=5min
-OnUnitInactiveSec=1h
-RandomizedDelaySec=5min
-Persistent=true
-[Install]
-WantedBy=timers.target
-'''
+
 
 
 def run(*args):
@@ -82,9 +74,13 @@ def install(new_receiver, agent_file):
         raise RuntimeError('Receiver was modified outside guarded HTTPS installation')
     if ETC.exists() or LIB.exists() or WEBROOT.exists():
         raise RuntimeError('Existing HTTPS paths need manual inspection; no changes')
-    for name in ('tanem-https.service', 'tanem-https.timer'):
-        if (SYSTEMD / name).exists():
-            raise RuntimeError('Existing timer or service; no changes')
+    if DROPIN_PATH.exists() or DEPLOY_HOOK.exists():
+        raise RuntimeError('Existing Certbot integration needs inspection; no changes')
+    certbot_service = run('/usr/bin/systemctl', 'cat', 'certbot.service').stdout
+    if 'ExecStart=/usr/bin/certbot -q renew --no-random-sleep-on-renew' not in certbot_service:
+        raise RuntimeError('Unexpected existing Certbot service; no changes')
+    if run('/usr/bin/systemctl', 'is-enabled', 'certbot.timer').stdout.strip() != 'enabled':
+        raise RuntimeError('Certbot automatic renewal timer must already be enabled')
 
     previous = module(PROGRAM, 'tanem_receiver_old')
     updated = module(new_receiver, 'tanem_receiver_new')
@@ -129,14 +125,16 @@ def install(new_receiver, agent_file):
         (LIB / 'agent.py').chmod(0o755)
         (LIB / 'reload.sh').write_text(RELOAD)
         (LIB / 'reload.sh').chmod(0o755)
-        for filename, content in (('tanem-https.service', SERVICE), ('tanem-https.timer', TIMER)):
-            path = SYSTEMD / filename
-            path.write_text(content)
-            done.append(path)
+        DROPIN_DIR.mkdir(parents=True, exist_ok=True)
+        DROPIN_PATH.write_text(DROPIN)
+        done.append(DROPIN_PATH)
+        DEPLOY_HOOK.parent.mkdir(parents=True, exist_ok=True)
+        DEPLOY_HOOK.write_text(RELOAD)
+        DEPLOY_HOOK.chmod(0o755)
+        done.append(DEPLOY_HOOK)
         run('/usr/sbin/nginx', '-t')
         run('/usr/sbin/nginx', '-s', 'reload')
         run('/usr/bin/systemctl', 'daemon-reload')
-        run('/usr/bin/systemctl', 'enable', '--now', 'tanem-https.timer')
         (ETC / 'installed.json').write_text(json.dumps({'receiver_sha256': digest(new_bytes)}))
     except BaseException:
         # Roll back all TANEM-managed HTTP files and the publisher; existing sites untouched.
@@ -147,8 +145,6 @@ def install(new_receiver, agent_file):
             file.write_bytes(before)
         subprocess.run(['/usr/sbin/nginx', '-t'], check=False, capture_output=True)
         subprocess.run(['/usr/sbin/nginx', '-s', 'reload'], check=False, capture_output=True)
-        subprocess.run(['/usr/bin/systemctl', 'disable', '--now', 'tanem-https.timer'],
-                       check=False, capture_output=True)
         for path in reversed(done):
             if path.is_dir():
                 shutil.rmtree(path)
@@ -156,7 +152,7 @@ def install(new_receiver, agent_file):
                 path.unlink(missing_ok=True)
         subprocess.run(['/usr/bin/systemctl', 'daemon-reload'], check=False, capture_output=True)
         raise
-    print('TANEM_HTTPS_INSTALLED: certbot reused; renewal timer unchanged; managed vhosts:',
+    print('TANEM_HTTPS_INSTALLED: existing certbot.timer reused; managed vhosts:',
           len(plans))
 
 
