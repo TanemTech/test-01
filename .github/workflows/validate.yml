@@ -18,19 +18,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify test site
+      - name: Verify complete static site
         shell: bash
         run: |
           set -euo pipefail
           test -f index.html
-          grep -q '<!doctype html>' index.html
-          grep -q 'Тестовая публикация № 01' index.html
-          grep -q '<meta name="robots" content="noindex, nofollow">' index.html
+          test -f style.css
+          test -f assets/test-mark.svg
+          grep -Fq '<!doctype html>' index.html
+          grep -Fq 'Тестовая публикация № 01' index.html
+          grep -Fq 'Проверка № 05:' index.html
+          grep -Fq '<meta name="robots" content="noindex, nofollow">' index.html
+          grep -Fq 'href="style.css"' index.html
+          grep -Fq 'src="assets/test-mark.svg"' index.html
           test "$(wc -c < index.html)" -le 100000
-      - name: Publish only the checked static page as an artifact
+          test "$(wc -c < style.css)" -le 100000
+          test "$(wc -c < assets/test-mark.svg)" -le 100000
+      - name: Publish checked HTML, CSS and image as an artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: tanem-site
-          path: index.html
+          path: |
+            index.html
+            style.css
+            assets/test-mark.svg
           if-no-files-found: error
           retention-days: 7
