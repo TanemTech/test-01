@@ -16,7 +16,9 @@ concurrency:
 
 jobs:
   publish:
+    # Retired at the owner's request. Re-enable only after explicit onboarding.
     if: >-
+      false &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')

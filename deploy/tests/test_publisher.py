@@ -15,6 +15,7 @@ import receiver as r
 import client as c
 import bootstrap as b
 import render_workflow as w
+import remove_test_site as removal
 
 
 def archive(files=None):
@@ -185,6 +186,68 @@ class PublisherTests(unittest.TestCase):
     def test_bad_public_key_cannot_inject_authorized_keys(self):
         with self.assertRaises(ValueError):
             r.public_key('ssh-ed25519 AAAA\ncommand="id"')
+
+
+    def removal_setup(self):
+        self.deploy()
+        r.write_json(self.config / 'sites/test-01.json', {**self.site, 'keys': []})
+        other = self.root / 'other'
+        other.mkdir()
+        (other / 'index.html').write_text('keep')
+        return other
+
+    def test_removal_preserves_other_files_and_is_repeatable(self):
+        other = self.removal_setup()
+        with patch.object(r, 'rebuild_auth'):
+            removal.remove(r)
+            removal.remove(r)
+        self.assertFalse((self.root / 'test-01').exists())
+        self.assertEqual((other / 'index.html').read_text(), 'keep')
+        self.assertFalse((self.config / 'sites/test-01.json').exists())
+
+    def test_removal_refuses_operator_changed_nginx_config(self):
+        self.removal_setup()
+        (self.conf / 'tanem-auto-test-01.conf').write_text('operator changes')
+        with patch.object(r, 'rebuild_auth') as auth, self.assertRaises(ValueError):
+            removal.remove(r)
+        auth.assert_not_called()
+        self.assertTrue((self.root / 'test-01/current/index.html').exists())
+
+    def test_removal_restores_nginx_on_validation_failure(self):
+        self.removal_setup()
+        conf = self.conf / 'tanem-auto-test-01.conf'
+        before = conf.read_bytes()
+        self.mocks[3].side_effect = [RuntimeError('invalid nginx'), None, None]
+        with patch.object(r, 'rebuild_auth') as auth, self.assertRaises(RuntimeError):
+            removal.remove(r)
+        auth.assert_not_called()
+        self.assertEqual(conf.read_bytes(), before)
+        self.assertTrue((self.config / 'sites/test-01.json').exists())
+        self.assertTrue((self.root / 'test-01/current/index.html').exists())
+
+    def test_removal_resumes_after_key_revocation_failure(self):
+        other = self.removal_setup()
+        with patch.object(r, 'rebuild_auth', side_effect=RuntimeError('write failed')):
+            with self.assertRaises(RuntimeError):
+                removal.remove(r)
+        self.assertTrue((self.config / 'retiring-test-01.json').exists())
+        with patch.object(r, 'rebuild_auth'):
+            removal.remove(r)
+        self.assertFalse((self.root / 'test-01').exists())
+        self.assertEqual((other / 'index.html').read_text(), 'keep')
+
+    def test_removal_refuses_unregistered_directory_and_symlink(self):
+        self.deploy()
+        with self.assertRaises(ValueError):
+            removal.remove(r)
+        base = self.root / 'test-01'
+        moved = self.root / 'other'
+        base.rename(moved)
+        base.symlink_to(moved)
+        r.write_json(self.config / 'sites/test-01.json', {**self.site, 'keys': []})
+        with self.assertRaises(ValueError):
+            removal.remove(r)
+        self.assertTrue((moved / 'current/index.html').exists())
 
 
 class ClientTests(unittest.TestCase):
