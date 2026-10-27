@@ -65,6 +65,12 @@ jobs:
         run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/integration.py
       - name: Verify guarded HTTPS upgrade on disposable server
         run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/https/enable.py deploy/https/receiver.py deploy/https/agent.py
+      - name: Verify existing Certbot timer is reused and no second timer is installed
+        run: |
+          sudo systemctl cat certbot.service | grep -F 'ExecStartPost=-/usr/bin/python3 /usr/local/lib/tanem-https/agent.py'
+          test ! -e /etc/systemd/system/tanem-https.timer
+          test ! -e /etc/systemd/system/tanem-https.service
+          sudo test -x /etc/letsencrypt/renewal-hooks/deploy/tanem-https-reload.sh
       - name: Verify ACME challenge, HTTP redirect and TLS isolation
         run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/https/integration.py
       - name: Diagnose SSH integration failures without secrets
