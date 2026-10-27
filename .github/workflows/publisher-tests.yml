@@ -45,7 +45,7 @@ jobs:
       - name: Prepare disposable SSH and Nginx server
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nginx openssh-server
+          sudo apt-get install -y -qq nginx openssh-server certbot
           sudo systemctl start nginx
           sudo ssh-keygen -A
           sudo mkdir -p /run/sshd
@@ -63,6 +63,10 @@ jobs:
           sudo /usr/sbin/sshd -f /tmp/tanem-test-sshd.conf -E /tmp/tanem-test-sshd.log
       - name: Test real SSH publication and Nginx HTTP
         run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/integration.py
+      - name: Verify guarded HTTPS upgrade on disposable server
+        run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/https/enable.py deploy/https/receiver.py deploy/https/agent.py
+      - name: Verify ACME challenge, HTTP redirect and TLS isolation
+        run: sudo env GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted python3 deploy/https/integration.py
       - name: Diagnose SSH integration failures without secrets
         if: failure()
         run: sudo tail -50 /tmp/tanem-test-sshd.log || true
