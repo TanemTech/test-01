@@ -17,7 +17,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Validate requester and create private client repository
+      - name: Validate ChatGPT project and create private client repository
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TANEM_REPO_CREATOR_TOKEN: ${{ secrets.TANEM_REPO_CREATOR_TOKEN }}
