@@ -27,11 +27,20 @@
 3. Создать fine-grained personal access token для владельца `TanemTech`.
    Repository access: All repositories — для подключения будущих репозиториев
    без ручного изменения доступа. Права: **Actions: Read and write**,
-   **Secrets: Read and write**, **Contents: Read-only** (Metadata добавляется автоматически).
+   **Secrets: Read and write**, **Environments: Read and write**,
+   **Contents: Read-only** (Metadata добавляется автоматически).
    Сохранить его только в управляющем репозитории как `TANEM_GITHUB_TOKEN`.
    Срок действия выбирает владелец; при истечении заменить этот секрет.
    Для ограниченного пилота можно выбрать только `test-01`, но тогда новые
    репозитории понадобится добавлять в разрешения токена.
+
+   Для автоматического включения Pages см. [PAGES.md](PAGES.md): дополнительно
+   нужны Pages и Administration — Read and write. Подготовленный workflow
+   `Repair test-01 deployment connection` завершает прежнюю настройку окружения
+   и перенос ключа только для `test-01`, без публикации. Для создания окружения
+   ему также требуется Administration: Read and write. Этот разовый ремонт
+   сохраняет уже предусмотренное подтверждение владельцем; порядок работы
+   будущих технических специалистов здесь не меняется.
 4. **До подключения** нового клиентского репозитория: Settings → Environments →
    `tanem-production`: Required reviewers = владелец `TanemTech`;
    переменная окружения `TANEM_RELEASE_PERMISSION` = `enabled`.
@@ -137,3 +146,4 @@ Required reviewers доступно в публичных репозитория
 Простое изменение репозитория больше не запускает Actions по проверке/публикации
 на нашем тестовом сайте; инженерные тесты запускаются лишь на изменениях
 управляющего кода.
+

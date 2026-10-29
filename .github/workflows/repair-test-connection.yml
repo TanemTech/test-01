@@ -1,0 +1,33 @@
+name: Repair test-01 deployment connection
+
+# One-time repair of the already selected test site, never a production release.
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/repair_test_connection.py', '.github/workflows/repair-test-connection.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tanem-site-enrollment
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check connection repair
+        run: python3 -m unittest discover -s deploy/tests -p test_connection_repair.py -v
+      - name: Complete the existing approval setup and migrate the test site key
+        env:
+          TANEM_SERVER: ${{ secrets.TANEM_SERVER }}
+          GH_TOKEN: ${{ secrets.TANEM_GITHUB_TOKEN }}
+        run: |
+          python3 deploy/repair_test_connection.py
+          python3 deploy/audit.py
