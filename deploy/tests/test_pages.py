@@ -23,7 +23,7 @@ class PagesTests(unittest.TestCase):
             path.write_text('{"repository":"TanemTech/test-01"}')
             self.assertEqual(pages.request_file(path), 'TanemTech/test-01')
 
-    def fake_api(self, page=None, other_workflow=None):
+    def fake_api(self, page=None, other_workflow=None, private=False, archived=False, default_branch='main', page_create_error=None):
         calls = []
         enabled = dict(page) if page else None
         source = 'name: Client Pages\non:\n  workflow_dispatch:\njobs:\n  deploy:\n    uses: actions/deploy-pages@v4\n'
@@ -32,6 +32,8 @@ class PagesTests(unittest.TestCase):
             calls.append((path, method, body))
             if path.endswith('/pages'):
                 if method == 'POST':
+                    if page_create_error:
+                        raise RuntimeError(page_create_error)
                     enabled = {'build_type': 'workflow', 'html_url': 'https://tanemtech.github.io/test-01/', 'cname': None}
                 return enabled
             if path.endswith('/contents/.github/workflows?ref=main'):
@@ -39,7 +41,7 @@ class PagesTests(unittest.TestCase):
             if '/contents/' in path:
                 text = other_workflow if 'selectel-site.yml' in path else source
                 return {'content': base64.b64encode(text.encode()).decode()}
-            return {'default_branch': 'main', 'private': False, 'archived': False}
+            return {'default_branch': default_branch, 'private': private, 'archived': archived}
         return fake, calls
 
     def test_enables_actions_pages_once_without_touching_secrets_or_selectel(self):
@@ -63,11 +65,27 @@ class PagesTests(unittest.TestCase):
             pages.configure('TanemTech/test-01')
         self.assertTrue(all(method == 'GET' for _, method, _ in calls))
 
-    def test_refuses_private_repo_before_enabling_anything(self):
-        with patch.object(pages, 'api', return_value={'private': True, 'default_branch': 'main'}) as api:
-            with self.assertRaises(ValueError):
+    def test_allows_private_repository_and_keeps_visibility_private(self):
+        fake, calls = self.fake_api(private=True)
+        with patch.object(pages, 'api', side_effect=fake):
+            self.assertEqual(pages.configure('TanemTech/test-01'), 'https://tanemtech.github.io/test-01/')
+        writes = [(p, m, b) for p, m, b in calls if m != 'GET']
+        self.assertEqual(writes, [('/repos/TanemTech/test-01/pages', 'POST', {'build_type': 'workflow'})])
+        repo_metadata = [entry for entry in calls if entry[0] == '/repos/TanemTech/test-01']
+        self.assertEqual(len(repo_metadata), 1)
+
+    def test_private_repository_reports_plan_or_token_requirement(self):
+        fake, calls = self.fake_api(private=True, page_create_error='GitHub API POST /repos/TanemTech/test-01/pages: HTTP 422')
+        with patch.object(pages, 'api', side_effect=fake):
+            with self.assertRaisesRegex(RuntimeError, 'Private-source Pages requires GitHub Pro'):
                 pages.configure('TanemTech/test-01')
-            self.assertEqual(api.call_count, 1)
+
+    def test_refuses_archived_or_non_main_repositories(self):
+        for options in [{'archived': True}, {'default_branch': 'master'}]:
+            fake, calls = self.fake_api(**options)
+            with self.subTest(options=options), patch.object(pages, 'api', side_effect=fake), self.assertRaises(ValueError):
+                pages.configure('TanemTech/test-01')
+            self.assertEqual(len(calls), 1)
 
     def test_waits_for_new_run_with_matching_revision(self):
         good = dict(id=12, head_sha='a' * 40, event='workflow_dispatch', head_branch='main', status='completed', conclusion='success')
