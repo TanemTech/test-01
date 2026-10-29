@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   create:
-    if: github.event.issue.title == 'TANEM: CREATE REPOSITORY'
+    if: "github.event.issue.title == 'TANEM: CREATE REPOSITORY'"
     runs-on: ubuntu-latest
     concurrency:
       group: tanem-repo-request-${{ github.event.issue.number }}
