@@ -42,8 +42,8 @@ jobs:
           if [ -n "$TANEM_SITE_SSH" ]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
-            echo 'NOT CONNECTED: run Connect sites to Selectel after one-time setup.'
-            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo '::error::NOT CONNECTED: TANEM_SITE_SSH is missing in tanem-production. Run Connect sites to Selectel after setup.'
+            exit 1
           fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         if: steps.connected.outputs.ready == 'true'
@@ -58,3 +58,4 @@ jobs:
         run: >-
           python3 publisher/deploy/client.py publish --repo "$SOURCE_REPO" --run-id "$SOURCE_RUN"
           --workflow validate.yml --artifact tanem-site
+
