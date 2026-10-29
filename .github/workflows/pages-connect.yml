@@ -1,0 +1,38 @@
+name: Enable client GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/pages/*.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tanem-pages-enrollment
+  cancel-in-progress: false
+
+jobs:
+  pages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Pages automation
+        run: python3 -m unittest discover -s deploy/tests -p test_pages.py -v
+      - name: Enable Pages and wait for the client link
+        env:
+          GH_TOKEN: ${{ secrets.TANEM_PAGES_TOKEN || secrets.TANEM_GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = push ]; then
+            python3 deploy/pages.py --before "$BEFORE" --after "$AFTER"
+          else
+            python3 deploy/pages.py
+          fi

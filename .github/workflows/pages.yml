@@ -1,0 +1,45 @@
+name: Preview TANEM test site on GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'style.css', 'assets/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Package only public site files
+        run: |
+          mkdir -p _site/assets
+          cp index.html style.css _site/
+          cp assets/test-mark.svg _site/assets/
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Show ready link
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: echo "PAGES_READY — $PAGE_URL" >> "$GITHUB_STEP_SUMMARY"
