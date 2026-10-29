@@ -3,7 +3,7 @@ import unittest
 from deploy.repository_requests import InvalidRequest, parse_request, validate_yandex_url
 
 
-CFG = {"projects": {"sergei": {"prefix": "Sergei"}, "ilya": {"prefix": "Ilya"}}}
+CFG = {"projects": {"sergei": {"prefix": "Sergei"}, "ilya": {"prefix": "Ilya"}, "grigoriy": {"prefix": "Grigoriy"}}}
 
 
 def issue(body=None, author="TanemTech"):
@@ -23,6 +23,10 @@ class ValidationTests(unittest.TestCase):
     def test_second_project_gets_other_prefix(self):
         r = parse_request(issue('{"project":"ilya","client_slug":"salon","yandex_url":"https://yandex.ru/maps/"}'), CFG)
         self.assertEqual(r["name"], "Ilya-salon")
+
+    def test_grigoriy_project(self):
+        r = parse_request(issue('{"project":"grigoriy","client_slug":"eva","yandex_url":"https://yandex.com/maps/org/yeva/1179517154/"}'), CFG)
+        self.assertEqual(r["name"], "Grigoriy-eva")
 
     def test_unknown_author_rejected(self):
         with self.assertRaises(InvalidRequest):
