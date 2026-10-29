@@ -27,10 +27,12 @@ jobs:
       - name: Enable Pages and wait for the client link
         env:
           GH_TOKEN: ${{ secrets.TANEM_PAGES_TOKEN || secrets.TANEM_GITHUB_TOKEN }}
+          TOKEN_SOURCE: ${{ secrets.TANEM_PAGES_TOKEN != '' && 'TANEM_PAGES_TOKEN' || 'TANEM_GITHUB_TOKEN' }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
         run: |
+          echo "PAGES_TOKEN_SOURCE: $TOKEN_SOURCE"
           if [ "$EVENT_NAME" = push ]; then
             python3 deploy/pages.py --before "$BEFORE" --after "$AFTER"
           else

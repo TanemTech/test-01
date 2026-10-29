@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Read-only check of the installed publisher and GitHub release prerequisites."""
-import json
 import sys
 
 from client import api, load_credentials, ssh_request, validate_registry
 
 
 def main():
+    pages_token = api('/repos/TanemTech/test-01/actions/secrets/TANEM_PAGES_TOKEN', allow_missing=True)
+    print('PAGES_TOKEN_SOURCE: ' + ('TANEM_PAGES_TOKEN' if pages_token else 'TANEM_GITHUB_TOKEN'), flush=True)
     bundle = load_credentials('TANEM_SERVER')
     if ssh_request(bundle, {'action': 'ping'}).get('scope') != 'admin':
         raise ValueError('TANEM_SERVER does not authenticate as publisher admin')

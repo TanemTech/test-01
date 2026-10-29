@@ -1,5 +1,4 @@
 import base64
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -87,7 +86,7 @@ class PagesTests(unittest.TestCase):
              patch.object(pages, 'runs', return_value=[]), \
              patch.object(pages, 'wait_run', return_value={'id': 12}), \
              patch.object(pages, 'api', side_effect=[{'commit': {'sha': 'a' * 40}}, None, {'jobs': [{'conclusion': 'skipped', 'steps': []}]}]), \
-             patch.object(pages, 'wait_http') as http:
+             patch.object(pages, 'wait_http') as http, patch('builtins.print'):
             with self.assertRaisesRegex(ValueError, 'skipped'):
                 pages.connect('TanemTech/test-01')
             http.assert_not_called()
