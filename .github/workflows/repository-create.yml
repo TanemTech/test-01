@@ -1,0 +1,27 @@
+name: Create TANEM client repository (Chat request)
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create:
+    if: github.event.issue.title == 'TANEM: CREATE REPOSITORY'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: tanem-repo-request-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate requester and create private client repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TANEM_REPO_CREATOR_TOKEN: ${{ secrets.TANEM_REPO_CREATOR_TOKEN }}
+        run: >-
+          python3 deploy/repository_requests.py
+          --event "$GITHUB_EVENT_PATH"
+          --config deploy/repository-creators.json
