@@ -68,10 +68,11 @@ def configure(repo):
     if pages is None:
         try:
             api(f'/repos/{repo}/pages', method='POST', body={'build_type': 'workflow'})
-        except RuntimeError:
+        except RuntimeError as exc:
             if meta.get('private'):
                 raise RuntimeError(
                     'GitHub could not enable Pages for this private repository. '
+                    f'API response: {exc}. '
                     'Private-source Pages requires GitHub Pro for a personal account, '
                     'or Team/Enterprise, and a token with Pages: write and Administration: write. '
                     'The repository visibility was not changed.'
