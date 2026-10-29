@@ -46,8 +46,8 @@ def contents(repo, path, allow_missing=False):
 
 def configure(repo):
     meta = api(f'/repos/{repo}')
-    if meta.get('private') or meta.get('archived') or meta.get('default_branch') != 'main':
-        raise ValueError('Pages enrollment requires an active public client repository with main')
+    if meta.get('archived') or meta.get('default_branch') != 'main':
+        raise ValueError('Pages enrollment requires an active client repository with main')
     source = contents(repo, '.github/workflows/pages.yml')
     if 'actions/deploy-pages@' not in source or 'workflow_dispatch:' not in source:
         raise ValueError('Client needs its template Pages workflow with workflow_dispatch')
@@ -66,7 +66,17 @@ def configure(repo):
             raise ValueError('Another workflow follows Pages runs; separate its production release first: ' + item['name'])
     pages = api(f'/repos/{repo}/pages', allow_missing=True)
     if pages is None:
-        api(f'/repos/{repo}/pages', method='POST', body={'build_type': 'workflow'})
+        try:
+            api(f'/repos/{repo}/pages', method='POST', body={'build_type': 'workflow'})
+        except RuntimeError:
+            if meta.get('private'):
+                raise RuntimeError(
+                    'GitHub could not enable Pages for this private repository. '
+                    'Private-source Pages requires GitHub Pro for a personal account, '
+                    'or Team/Enterprise, and a token with Pages: write and Administration: write. '
+                    'The repository visibility was not changed.'
+                ) from None
+            raise
         pages = api(f'/repos/{repo}/pages')
     if pages.get('cname') or pages.get('build_type') != 'workflow':
         raise ValueError('Existing Pages uses a custom domain or another build source; left unchanged')
