@@ -111,7 +111,7 @@ def create_repository(details, token):
     result = github_api("POST", "/user/repos", token, {
         "name": name,
         "description": "Яндекс.Карты: " + details["url"],
-        "private": True,
+        "private": False,
         "auto_init": True,
         "has_issues": True,
     })
@@ -160,7 +160,7 @@ def main():
         return 1
 
     issue_comment("TanemTech/test-01", number, issue_token,
-                  f"✅ Репозиторий создан: {url}\n\n"
+                  f"✅ Публичный репозиторий создан: {url}\n\n"
                   "Откройте ссылку и загрузите материалы клиента. "
                   "Публикация Pages и Selectel не запускалась.")
     return 0

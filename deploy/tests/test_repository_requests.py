@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from deploy.repository_requests import InvalidRequest, parse_request, validate_yandex_url
+from deploy.repository_requests import InvalidRequest, parse_request, validate_yandex_url, create_repository
 
 
 CFG = {"projects": {"sergei": {"prefix": "Sergei"}, "ilya": {"prefix": "Ilya"}, "grigoriy": {"prefix": "Grigoriy"}}}
@@ -15,6 +16,19 @@ def issue(body=None, author="TanemTech"):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_creates_public_client_without_starting_deployment(self):
+        details = parse_request(issue(), CFG)
+        with patch('deploy.repository_requests.github_api', return_value={
+            'full_name': 'TanemTech/Sergei-anna-nails',
+            'html_url': 'https://github.com/TanemTech/Sergei-anna-nails',
+        }) as api:
+            self.assertEqual(create_repository(details, 'test-token'),
+                             'https://github.com/TanemTech/Sergei-anna-nails')
+        api.assert_called_once_with('POST', '/user/repos', 'test-token', {
+            'name': 'Sergei-anna-nails', 'description': 'Яндекс.Карты: ' + details['url'],
+            'private': False, 'auto_init': True, 'has_issues': True,
+        })
+
     def test_builds_repository_from_project_label(self):
         r = parse_request(issue(), CFG)
         self.assertEqual(r["name"], "Sergei-anna-nails")
