@@ -1,4 +1,8 @@
 {
   "repository": "TanemTech/Grigoriy-eva",
-  "retry": 1
+  "public_visibility_reviewed_refs": {
+    "refs/heads/build/eva-salon-site": "c4f26e4c9d403b162caba9b94b1b67f77e5e3229",
+    "refs/heads/main": "8f6d7f5ab5bb004e683158bcb970f221cc74eb36",
+    "refs/pull/1/head": "c4f26e4c9d403b162caba9b94b1b67f77e5e3229"
+  }
 }

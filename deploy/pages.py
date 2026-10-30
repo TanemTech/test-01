@@ -44,6 +44,38 @@ def contents(repo, path, allow_missing=False):
     return None if data is None else base64.b64decode(data['content']).decode('utf-8')
 
 
+def apply_reviewed_visibility(repo, reviewed_refs):
+    """Only an explicit owner-approved request may expose a reviewed repository.
+
+    Pin every Git ref, including PR refs, so a new branch or changed history
+    invalidates the review. Ordinary Pages enrollment never changes visibility.
+    """
+    if reviewed_refs is None:
+        return
+    if repo == 'TanemTech/test-01':
+        raise ValueError('The controller cannot change its own visibility')
+    if (not isinstance(reviewed_refs, dict) or 'refs/heads/main' not in reviewed_refs
+            or any(not isinstance(ref, str) or not ref.startswith('refs/')
+                   or not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{40}', sha)
+                   for ref, sha in reviewed_refs.items())):
+        raise ValueError('Public visibility requires the reviewed Git refs and full SHAs')
+    meta = api(f'/repos/{repo}')
+    if meta.get('archived') or meta.get('default_branch') != 'main':
+        raise ValueError('Public visibility requires an active client repository with main')
+    if meta.get('private') is False:
+        return  # The one-time transition is already complete.
+    refs = api(f'/repos/{repo}/git/refs?per_page=100')
+    if not isinstance(refs, list) or len(refs) >= 100:
+        raise ValueError('Cannot verify the complete reviewed Git ref set')
+    actual = {item['ref']: item['object']['sha'] for item in refs}
+    if actual != reviewed_refs:
+        raise ValueError('Repository refs changed after review; visibility left unchanged')
+    api(f'/repos/{repo}', method='PATCH', body={'private': False})
+    if api(f'/repos/{repo}').get('private') is not False:
+        raise RuntimeError('GitHub did not confirm public repository visibility')
+    print('PUBLIC_VISIBILITY_CONFIRMED: ' + repo, flush=True)
+
+
 def configure(repo):
     meta = api(f'/repos/{repo}')
     if meta.get('archived') or meta.get('default_branch') != 'main':
@@ -151,7 +183,10 @@ def main():
     if not os.environ.get('GH_TOKEN'):
         raise ValueError('Add TANEM_PAGES_TOKEN once in TanemTech/test-01 Actions secrets')
     for path in paths:
-        connect(request_file(path))
+        repo = request_file(path)
+        entry = json.loads(path.read_text())
+        apply_reviewed_visibility(repo, entry.get('public_visibility_reviewed_refs'))
+        connect(repo)
 
 
 if __name__ == '__main__':

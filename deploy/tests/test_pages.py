@@ -12,6 +12,59 @@ import pages
 
 
 class PagesTests(unittest.TestCase):
+    def test_visibility_is_unchanged_without_explicit_review(self):
+        with patch.object(pages, 'api') as api:
+            pages.apply_reviewed_visibility('TanemTech/test-02', None)
+        api.assert_not_called()
+
+    def test_controller_visibility_cannot_be_changed(self):
+        with patch.object(pages, 'api') as api, self.assertRaises(ValueError):
+            pages.apply_reviewed_visibility('TanemTech/test-01', {'refs/heads/main': 'a' * 40})
+        api.assert_not_called()
+
+    def test_public_visibility_only_for_exact_reviewed_refs(self):
+        reviewed = {'refs/heads/main': 'a' * 40, 'refs/heads/build': 'b' * 40}
+        refs = [{'ref': ref, 'object': {'sha': sha}} for ref, sha in reviewed.items()]
+        with patch.object(pages, 'api', side_effect=[
+            {'private': True, 'default_branch': 'main'}, refs, {}, {'private': False},
+        ]) as api, patch('builtins.print'):
+            pages.apply_reviewed_visibility('TanemTech/test-02', reviewed)
+        self.assertEqual([c for c in api.call_args_list if c.kwargs.get('method') == 'PATCH'], [
+            unittest.mock.call('/repos/TanemTech/test-02', method='PATCH', body={'private': False}),
+        ])
+
+    def test_changed_or_added_refs_block_public_visibility(self):
+        reviewed = {'refs/heads/main': 'a' * 40}
+        for refs in [
+            [{'ref': 'refs/heads/main', 'object': {'sha': 'b' * 40}}],
+            [{'ref': 'refs/heads/main', 'object': {'sha': 'a' * 40}},
+             {'ref': 'refs/heads/new', 'object': {'sha': 'b' * 40}}],
+            [],
+        ]:
+            with self.subTest(refs=refs), patch.object(pages, 'api', side_effect=[
+                {'private': True, 'default_branch': 'main'}, refs,
+            ]) as api, self.assertRaises(ValueError):
+                pages.apply_reviewed_visibility('TanemTech/test-02', reviewed)
+            self.assertTrue(all(c.kwargs.get('method', 'GET') == 'GET' for c in api.call_args_list))
+
+    def test_invalid_visibility_review_fails_without_api_access(self):
+        for reviewed in [False, {}, [], {'refs/heads/main': 'short'}, {'refs/heads/main': 1}]:
+            with self.subTest(reviewed=reviewed), patch.object(pages, 'api') as api, self.assertRaises(ValueError):
+                pages.apply_reviewed_visibility('TanemTech/test-02', reviewed)
+            api.assert_not_called()
+
+    def test_public_visibility_request_is_idempotent(self):
+        with patch.object(pages, 'api', return_value={'private': False, 'default_branch': 'main'}) as api:
+            pages.apply_reviewed_visibility('TanemTech/test-02', {'refs/heads/main': 'a' * 40})
+        api.assert_called_once_with('/repos/TanemTech/test-02')
+
+    def test_visibility_requires_confirmation_from_github(self):
+        with patch.object(pages, 'api', side_effect=[
+            {'private': True, 'default_branch': 'main'},
+            [{'ref': 'refs/heads/main', 'object': {'sha': 'a' * 40}}], {}, {'private': True},
+        ]), self.assertRaises(RuntimeError):
+            pages.apply_reviewed_visibility('TanemTech/test-02', {'refs/heads/main': 'a' * 40})
+
     def test_rejects_other_owners_templates_and_mismatched_filename(self):
         with tempfile.TemporaryDirectory() as root:
             for repo in ['Other/test-01', 'TanemTech/COPY-Tanem-Salons-Template',
